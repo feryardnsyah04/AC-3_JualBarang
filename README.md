@@ -12,7 +12,7 @@ Anggota Kelompok:
 - [@feryardnsyah04](https://github.com/feryardnsyah04)
 
 
-## Features
+## Fitur
 
 - Masukan produk ke keranjang
 - Melihat daftar produk di keranjang
