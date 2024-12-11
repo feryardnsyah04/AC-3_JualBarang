@@ -3,8 +3,10 @@ package controllers
 import (
 	"shopping-cart-api/database"
 	"shopping-cart-api/models"
+	"shopping-cart-api/utils"
 	"net/http"
 	"github.com/gin-gonic/gin"
+	"fmt"
 )
 
 type DeleteRequest struct {
@@ -103,4 +105,13 @@ func UpdateCartItemQuantity(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Quantity produk berhasil diupdate"})
+}
+
+func Checkout(c *gin.Context) {
+	var checkoutQueue utils.Queue
+    for !checkoutQueue.IsEmpty() {
+      item, _ := checkoutQueue.Dequeue()
+      fmt.Printf("Memproses item: %v\n", item)
+    }
+    c.JSON(200, gin.H{"message": "Checkout Berhasil"})
 }
