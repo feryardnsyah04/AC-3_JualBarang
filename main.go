@@ -17,10 +17,10 @@ func main() {
 		})
 	})
 
+	router.POST("/cart", controllers.AddToCart)
 	router.GET("/cart", controllers.GetCartItems)
-	router.POST("/cart", controllers.AddCartItem)
-	router.PUT("/cart/:id", controllers.UpdateCartItemQuantity)
-	router.DELETE("/cart/:id", controllers.DeleteCartItem)
+	router.PUT("/cart", controllers.UpdateCartItem)
+	router.DELETE("/cart", controllers.RemoveFromCart)
 
 	router.Run(":8080")
 }

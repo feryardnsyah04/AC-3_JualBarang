@@ -1,27 +1,38 @@
 package controllers
 
 import (
+	"database/sql"
+	"net/http"
+	"fmt"
 	"shopping-cart-api/database"
 	"shopping-cart-api/models"
 	"shopping-cart-api/utils"
-	"net/http"
 	"github.com/gin-gonic/gin"
-	"fmt"
 )
 
-type DeleteRequest struct {
-	ID int `json:"id"`
-}
+var cartStack utils.Stack
 
-type UpdateQuantityRequest struct {
-	ID       int `json:"id"`
-	Quantity int `json:"quantity"`
+func AddToCart(c *gin.Context) {
+	var cartItem models.CartItem
+	if err := c.BindJSON(&cartItem); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Masukan tidak valid!"})
+		return
+	}
+
+	id, err := cartStack.Push(cartItem)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menambahkan item ke database!"})
+		return
+	}
+	cartItem.ID = int(id)
+	c.JSON(http.StatusCreated, gin.H{"message": "Barang ditambahkan ke keranjang", "item": cartItem})
 }
 
 func GetCartItems(c *gin.Context) {
-	rows, err := database.DB.Query("SELECT id, product, category, price, quantity FROM cart_items")
+	query := "SELECT id, product, variant, price, quantity FROM cart_items"
+	rows, err := database.DB.Query(query)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil item dari database!"})
 		return
 	}
 	defer rows.Close()
@@ -29,8 +40,8 @@ func GetCartItems(c *gin.Context) {
 	var items []models.CartItem
 	for rows.Next() {
 		var item models.CartItem
-		if err := rows.Scan(&item.ID, &item.Product, &item.Category, &item.Price, &item.Quantity); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if err := rows.Scan(&item.ID, &item.Product, &item.Variant, &item.Price, &item.Quantity); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses item dari database!"})
 			return
 		}
 		items = append(items, item)
@@ -39,79 +50,73 @@ func GetCartItems(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
-func AddCartItem(c *gin.Context) {
-	var item models.CartItem
-	if err := c.ShouldBindJSON(&item); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+func UpdateCartItem(c *gin.Context) {
+	var updateData models.CartItem
+	if err := c.BindJSON(&updateData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Format permintaan tidak valid!"})
 		return
 	}
 
-	query := "INSERT INTO cart_items (product, category, price, quantity) VALUES (?, ?, ?, ?)"
-	result, err := database.DB.Exec(query, item.Product, item.Category, item.Price, item.Quantity)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	id, _ := result.LastInsertId()
-	item.ID = int(id)
-	c.JSON(http.StatusCreated, item)
-}
-
-func DeleteCartItem(c *gin.Context) {
-	var req DeleteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Format permintaan tidak valid"})
-		return
-	}
-
-	query := "DELETE FROM cart_items WHERE id = ?"
-	_, err := database.DB.Exec(query, req.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM cart_items").Scan(&count)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if count == 0 {
-		_, err := database.DB.Exec("ALTER TABLE cart_items AUTO_INCREMENT = 1")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	query := "SELECT id, product, variant, price, quantity FROM cart_items WHERE id = ?"
+	row := database.DB.QueryRow(query, updateData.ID)
+	var existingItem models.CartItem
+	if err := row.Scan(&existingItem.ID, &existingItem.Product, &existingItem.Variant, &existingItem.Price, &existingItem.Quantity); err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Item tidak ditemukan di keranjang!"})
 			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa item di database!"})
+		return
+	}
+
+	updateQuery := "UPDATE cart_items SET variant = ?, quantity = ? WHERE id = ?"
+	_, err := database.DB.Exec(updateQuery, updateData.Variant, updateData.Quantity, updateData.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate item di database!"})
+		return
+	}
+
+	for i, item := range cartStack.GetAll() {
+		if item.ID == updateData.ID {
+			cartStack.GetAll()[i].Variant = updateData.Variant
+			cartStack.GetAll()[i].Quantity = updateData.Quantity
+			updateData = cartStack.GetAll()[i]
+			break
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Produk berhasil dihapus"})
+	c.JSON(http.StatusOK, gin.H{"message": "Item berhasil diperbarui", "item": updateData})
 }
 
-func UpdateCartItemQuantity(c *gin.Context) {
-	var req UpdateQuantityRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Format permintaan tidak valid"})
+
+func RemoveFromCart(c *gin.Context) {
+	var cartItem models.CartItem
+	if err := c.BindJSON(&cartItem); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Masukan tidak valid!"})
 		return
 	}
 
-	query := "UPDATE cart_items SET quantity = ? WHERE id = ?"
-	_, err := database.DB.Exec(query, req.Quantity, req.ID)
+	query := "SELECT id, product, variant, price, quantity FROM cart_items WHERE id = ?"
+	row := database.DB.QueryRow(query, cartItem.ID)
+	var existingItem models.CartItem
+	if err := row.Scan(&existingItem.ID, &existingItem.Product, &existingItem.Variant, &existingItem.Price, &existingItem.Quantity); err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Item tidak ditemukan di database!"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa item di database!"})
+			return
+	}
+
+	_, err := database.DB.Exec("DELETE FROM cart_items WHERE id = ?", cartItem.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus item dari database!"})
+			return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Quantity produk berhasil diupdate"})
-}
+	if !cartStack.RemoveByID(cartItem.ID) {
+		fmt.Println("Item tidak ditemukan di stack, tetapi dihapus dari database")
+	}
 
-func Checkout(c *gin.Context) {
-	var checkoutQueue utils.Queue
-    for !checkoutQueue.IsEmpty() {
-      item, _ := checkoutQueue.Dequeue()
-      fmt.Printf("Memproses item: %v\n", item)
-    }
-    c.JSON(200, gin.H{"message": "Checkout Berhasil"})
+	c.JSON(http.StatusOK, gin.H{"message": "Item dihapus dari keranjang", "item": existingItem})
 }

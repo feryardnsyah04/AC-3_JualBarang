@@ -3,7 +3,7 @@ package models
 type CartItem struct {
 	ID       int    `json:"id"`
 	Product  string `json:"product"`
-	Category string `json:"category"`
+	Variant  string `json:"variant"`
 	Price    int    `json:"price"`
 	Quantity int    `json:"quantity"`
 }
