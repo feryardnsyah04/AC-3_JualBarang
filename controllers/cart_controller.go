@@ -100,18 +100,18 @@ func RemoveFromCart(c *gin.Context) {
 	row := database.DB.QueryRow(query, cartItem.ID)
 	var existingItem models.CartItem
 	if err := row.Scan(&existingItem.ID, &existingItem.Product, &existingItem.Variant, &existingItem.Price, &existingItem.Quantity); err != nil {
-			if err == sql.ErrNoRows {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Item tidak ditemukan di database!"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa item di database!"})
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Item tidak ditemukan di database!"})
 			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa item di database!"})
+		return
 	}
 
 	_, err := database.DB.Exec("DELETE FROM cart_items WHERE id = ?", cartItem.ID)
 	if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus item dari database!"})
-			return
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus item dari database!"})
+		return
 	}
 
 	if !cartStack.RemoveByID(cartItem.ID) {
